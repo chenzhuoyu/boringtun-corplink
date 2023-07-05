@@ -3,6 +3,7 @@
 
 use boringtun::device::drop_privileges::drop_privileges;
 use boringtun::device::{DeviceConfig, DeviceHandle};
+use boringtun::noise::handshake::Version;
 use clap::builder::PossibleValuesParser;
 use clap::{Arg, ArgAction, Command};
 use daemonize::{Daemonize, Outcome};
@@ -65,6 +66,11 @@ fn main() {
                 .env("WG_TUN_FD")
                 .help("File descriptor for an already-existing TUN device")
                 .default_value("-1"),
+            Arg::new("version")
+                .long("version")
+                .env("WG_VERSION")
+                .help("Protocol version of WireGuard, used exclusively for CorpLink")
+                .default_value(""),
             Arg::new("log")
                 .long("log")
                 .short('l')
@@ -117,6 +123,11 @@ fn main() {
         .unwrap()
         .parse()
         .expect("Invalid verbosity value");
+    let version: Version = matches
+        .get_one::<String>("version")
+        .unwrap()
+        .parse()
+        .expect("Invalid version value");
 
     // Create a socketpair to communicate between forked processes
     let (sock1, sock2) = UnixDatagram::pair().unwrap();
@@ -175,6 +186,7 @@ fn main() {
         #[cfg(target_os = "linux")]
         uapi_fd,
         use_connected_socket: !matches.get_flag("disable-connected-udp"),
+        version,
         #[cfg(target_os = "linux")]
         use_multi_queue: !matches.get_flag("disable-multi-queue"),
     };

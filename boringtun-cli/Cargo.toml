@@ -1,5 +1,9 @@
 [package]
-authors = ["Noah Kennedy <nkennedy@cloudflare.com>", "Andy Grover <agrover@cloudflare.com>", "Jeff Hiner <jhiner@cloudflare.com>"]
+authors = [
+    "Noah Kennedy <nkennedy@cloudflare.com>",
+    "Andy Grover <agrover@cloudflare.com>",
+    "Jeff Hiner <jhiner@cloudflare.com>",
+]
 description = "an implementation of the WireGuard® protocol designed for portability and speed"
 documentation = "https://docs.rs/boringtun/0.7.1/boringtun/"
 edition = "2021"
@@ -10,7 +14,7 @@ repository = "https://github.com/cloudflare/boringtun"
 version = "0.7.1"
 
 [dependencies]
-clap = {version = "4.6.0", features = ["env"]}
+clap = { version = "4.6.0", features = ["env"] }
 daemonize = "0.5"
 tracing = "0.1.40"
 tracing-appender = "0.2.1"

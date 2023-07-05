@@ -303,6 +303,7 @@ pub struct Handshake {
     /// Current handshake state
     state: HandshakeState,
     cookies: Cookies,
+    initial_chain_hash: Option<[u8; 32]>,
     /// The timestamp of the last handshake we received
     last_handshake_timestamp: Tai64N,
     // TODO: make TimeStamper a singleton
@@ -327,12 +328,13 @@ pub fn parse_handshake_anon(
     static_private: &x25519::StaticSecret,
     static_public: &x25519::PublicKey,
     packet: &HandshakeInit,
+    initial_chain_hash: Option<[u8; 32]>,
 ) -> Result<HalfHandshake, WireGuardError> {
     let peer_index = packet.sender_idx;
     // initiator.chaining_key = HASH(CONSTRUCTION)
     let mut chaining_key = INITIAL_CHAIN_KEY;
     // initiator.hash = HASH(HASH(initiator.chaining_key || IDENTIFIER) || responder.static_public)
-    let mut hash = INITIAL_CHAIN_HASH;
+    let mut hash = initial_chain_hash.unwrap_or(INITIAL_CHAIN_HASH);
     hash = b2s_hash(&hash, static_public.as_bytes());
     // msg.unencrypted_ephemeral = DH_PUBKEY(initiator.ephemeral_private)
     let peer_ephemeral_public = x25519::PublicKey::from(*packet.unencrypted_ephemeral);
@@ -414,6 +416,7 @@ impl Handshake {
         peer_static_public: x25519::PublicKey,
         global_idx: u32,
         preshared_key: Option<[u8; 32]>,
+        initial_chain_hash: Option<[u8; 32]>,
     ) -> Handshake {
         let params = NoiseParams::new(
             static_private,
@@ -427,6 +430,7 @@ impl Handshake {
             next_index: global_idx,
             previous: HandshakeState::None,
             state: HandshakeState::None,
+            initial_chain_hash,
             last_handshake_timestamp: Tai64N::zero(),
             stamper: TimeStamper::new(),
             cookies: Default::default(),
@@ -486,7 +490,7 @@ impl Handshake {
         // initiator.chaining_key = HASH(CONSTRUCTION)
         let mut chaining_key = INITIAL_CHAIN_KEY;
         // initiator.hash = HASH(HASH(initiator.chaining_key || IDENTIFIER) || responder.static_public)
-        let mut hash = INITIAL_CHAIN_HASH;
+        let mut hash = self.initial_chain_hash.unwrap_or(INITIAL_CHAIN_HASH);
         hash = b2s_hash(&hash, self.params.static_public.as_bytes());
         // msg.sender_index = little_endian(initiator.sender_index)
         let peer_index = packet.sender_idx;
@@ -725,7 +729,7 @@ impl Handshake {
         // initiator.chaining_key = HASH(CONSTRUCTION)
         let mut chaining_key = INITIAL_CHAIN_KEY;
         // initiator.hash = HASH(HASH(initiator.chaining_key || IDENTIFIER) || responder.static_public)
-        let mut hash = INITIAL_CHAIN_HASH;
+        let mut hash = self.initial_chain_hash.unwrap_or(INITIAL_CHAIN_HASH);
         hash = b2s_hash(&hash, self.params.peer_static_public.as_bytes());
         // initiator.ephemeral_private = DH_GENERATE()
         let ephemeral_private = x25519::ReusableSecret::random_from_rng(OsRng);

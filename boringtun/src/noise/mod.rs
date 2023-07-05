@@ -198,6 +198,7 @@ impl Tunn {
         persistent_keepalive: Option<u16>,
         index: u32,
         rate_limiter: Option<Arc<RateLimiter>>,
+        initial_chain_hash: Option<[u8; 32]>,
     ) -> Self {
         let static_public = x25519::PublicKey::from(&static_private);
 
@@ -208,6 +209,7 @@ impl Tunn {
                 peer_static_public,
                 index << 8,
                 preshared_key,
+                initial_chain_hash,
             ),
             sessions: Default::default(),
             current: Default::default(),
@@ -602,9 +604,8 @@ mod tests {
         let their_public_key = x25519_dalek::PublicKey::from(&their_secret_key);
         let their_idx = OsRng.next_u32();
 
-        let my_tun = Tunn::new(my_secret_key, their_public_key, None, None, my_idx, None);
-
-        let their_tun = Tunn::new(their_secret_key, my_public_key, None, None, their_idx, None);
+        let my_tun = Tunn::new(my_secret_key, their_public_key, None, None, my_idx, None, None);
+        let their_tun = Tunn::new(their_secret_key, my_public_key, None, None, their_idx, None, None);
 
         (my_tun, their_tun)
     }

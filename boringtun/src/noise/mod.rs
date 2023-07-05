@@ -20,6 +20,8 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 use std::time::Duration;
 
+use self::handshake::Version;
+
 /// The default value to use for rate limiting, when no other rate limiter is defined
 const PEER_HANDSHAKE_RATE_LIMIT: u64 = 10;
 
@@ -198,6 +200,7 @@ impl Tunn {
         persistent_keepalive: Option<u16>,
         index: u32,
         rate_limiter: Option<Arc<RateLimiter>>,
+        version: Version,
     ) -> Self {
         let static_public = x25519::PublicKey::from(&static_private);
 
@@ -208,6 +211,7 @@ impl Tunn {
                 peer_static_public,
                 index << 8,
                 preshared_key,
+                version,
             ),
             sessions: Default::default(),
             current: Default::default(),
@@ -602,9 +606,24 @@ mod tests {
         let their_public_key = x25519_dalek::PublicKey::from(&their_secret_key);
         let their_idx = OsRng.next_u32();
 
-        let my_tun = Tunn::new(my_secret_key, their_public_key, None, None, my_idx, None);
-
-        let their_tun = Tunn::new(their_secret_key, my_public_key, None, None, their_idx, None);
+        let my_tun = Tunn::new(
+            my_secret_key,
+            their_public_key,
+            None,
+            None,
+            my_idx,
+            None,
+            Version::Standard,
+        );
+        let their_tun = Tunn::new(
+            their_secret_key,
+            my_public_key,
+            None,
+            None,
+            their_idx,
+            None,
+            Version::Standard,
+        );
 
         (my_tun, their_tun)
     }

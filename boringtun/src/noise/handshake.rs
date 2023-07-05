@@ -31,9 +31,15 @@ const INITIAL_CHAIN_KEY: [u8; KEY_LEN] = [
 ];
 
 // initiator.chaining_hash = HASH(initiator.chaining_key || IDENTIFIER)
-const INITIAL_CHAIN_HASH: [u8; KEY_LEN] = [
+const INITIAL_CHAIN_HASH_STD: [u8; KEY_LEN] = [
     34, 17, 179, 97, 8, 26, 197, 102, 105, 18, 67, 219, 69, 138, 213, 50, 45, 156, 108, 102, 34,
     147, 232, 183, 14, 225, 156, 101, 186, 7, 158, 243,
+];
+
+// Initial chain hash for CorpLink modified WireGuard protocols.
+const INITIAL_CHAIN_HASH_CORPLINK: [u8; 32] = [
+    0xba, 0xe4, 0x21, 0x3c, 0x43, 0xdf, 0x20, 0x0f, 0x36, 0x78, 0x0d, 0xa7, 0x9a, 0xc9, 0x20, 0x4f,
+    0xfd, 0x8d, 0x12, 0x40, 0x86, 0xa3, 0x8c, 0x91, 0xaa, 0x4e, 0x81, 0xe2, 0xca, 0x57, 0xab, 0x39,
 ];
 
 #[inline]
@@ -294,6 +300,22 @@ enum HandshakeState {
     Expired,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Version {
+    #[default]
+    Standard,
+    CorpLink,
+}
+
+impl Version {
+    pub(crate) const fn inital_chain_hash(self) -> [u8; 32] {
+        match self {
+            Self::Standard => INITIAL_CHAIN_HASH_STD,
+            Self::CorpLink => INITIAL_CHAIN_HASH_CORPLINK,
+        }
+    }
+}
+
 pub struct Handshake {
     params: NoiseParams,
     /// Index of the next session
@@ -303,6 +325,7 @@ pub struct Handshake {
     /// Current handshake state
     state: HandshakeState,
     cookies: Cookies,
+    pub(super) version: Version,
     /// The timestamp of the last handshake we received
     last_handshake_timestamp: Tai64N,
     // TODO: make TimeStamper a singleton
@@ -327,12 +350,13 @@ pub fn parse_handshake_anon(
     static_private: &x25519::StaticSecret,
     static_public: &x25519::PublicKey,
     packet: &HandshakeInit,
+    version: Version,
 ) -> Result<HalfHandshake, WireGuardError> {
     let peer_index = packet.sender_idx;
     // initiator.chaining_key = HASH(CONSTRUCTION)
     let mut chaining_key = INITIAL_CHAIN_KEY;
     // initiator.hash = HASH(HASH(initiator.chaining_key || IDENTIFIER) || responder.static_public)
-    let mut hash = INITIAL_CHAIN_HASH;
+    let mut hash = version.inital_chain_hash();
     hash = b2s_hash(&hash, static_public.as_bytes());
     // msg.unencrypted_ephemeral = DH_PUBKEY(initiator.ephemeral_private)
     let peer_ephemeral_public = x25519::PublicKey::from(*packet.unencrypted_ephemeral);
@@ -414,6 +438,7 @@ impl Handshake {
         peer_static_public: x25519::PublicKey,
         global_idx: u32,
         preshared_key: Option<[u8; 32]>,
+        version: Version,
     ) -> Handshake {
         let params = NoiseParams::new(
             static_private,
@@ -424,6 +449,7 @@ impl Handshake {
 
         Handshake {
             params,
+            version,
             next_index: global_idx,
             previous: HandshakeState::None,
             state: HandshakeState::None,
@@ -486,7 +512,7 @@ impl Handshake {
         // initiator.chaining_key = HASH(CONSTRUCTION)
         let mut chaining_key = INITIAL_CHAIN_KEY;
         // initiator.hash = HASH(HASH(initiator.chaining_key || IDENTIFIER) || responder.static_public)
-        let mut hash = INITIAL_CHAIN_HASH;
+        let mut hash = self.version.inital_chain_hash();
         hash = b2s_hash(&hash, self.params.static_public.as_bytes());
         // msg.sender_index = little_endian(initiator.sender_index)
         let peer_index = packet.sender_idx;
@@ -725,7 +751,7 @@ impl Handshake {
         // initiator.chaining_key = HASH(CONSTRUCTION)
         let mut chaining_key = INITIAL_CHAIN_KEY;
         // initiator.hash = HASH(HASH(initiator.chaining_key || IDENTIFIER) || responder.static_public)
-        let mut hash = INITIAL_CHAIN_HASH;
+        let mut hash = self.version.inital_chain_hash();
         hash = b2s_hash(&hash, self.params.peer_static_public.as_bytes());
         // initiator.ephemeral_private = DH_GENERATE()
         let ephemeral_private = x25519::ReusableSecret::random_from_rng(OsRng);

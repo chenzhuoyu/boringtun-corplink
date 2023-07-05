@@ -104,7 +104,10 @@ impl Peer {
     pub fn connect_endpoint(
         &self,
         port: u16,
+        #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
         fwmark: Option<u32>,
+        #[cfg(not(any(target_os = "android", target_os = "fuchsia", target_os = "linux")))]
+        _: Option<u32>,
     ) -> Result<socket2::Socket, Error> {
         let mut endpoint = self.endpoint.write();
 

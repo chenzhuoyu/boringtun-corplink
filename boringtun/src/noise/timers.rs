@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 use super::errors::WireGuardError;
+use super::handshake::Version;
 use crate::noise::{Tunn, TunnResult};
 use std::mem;
 use std::ops::{Index, IndexMut};
@@ -18,10 +19,31 @@ use crate::sleepyinstant::Instant;
 // https://www.wireguard.com/papers/wireguard.pdf#page=14
 pub(crate) const REKEY_AFTER_TIME: Duration = Duration::from_secs(120);
 const REJECT_AFTER_TIME: Duration = Duration::from_secs(180);
-const REKEY_ATTEMPT_TIME: Duration = Duration::from_secs(90);
-pub(crate) const REKEY_TIMEOUT: Duration = Duration::from_secs(5);
 const KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(10);
 const COOKIE_EXPIRATION_TIME: Duration = Duration::from_secs(120);
+
+const REKEY_ATTEMPT_TIME_STD: Duration = Duration::from_secs(90);
+const REKEY_ATTEMPT_TIME_CORPLINK: Duration = Duration::from_secs(36);
+
+const REKEY_TIMEOUT_STD: Duration = Duration::from_secs(5);
+const REKEY_TIMEOUT_CORPLINK: Duration = Duration::from_secs(2);
+const EXTRA_REKEY_AFTER_CORPLINK: Duration = Duration::from_secs(132);
+
+impl Version {
+    const fn rekey_timeout(self) -> Duration {
+        match self {
+            Self::Standard => REKEY_TIMEOUT_STD,
+            Self::CorpLink => REKEY_TIMEOUT_CORPLINK,
+        }
+    }
+
+    const fn rekey_attempt_time(self) -> Duration {
+        match self {
+            Self::Standard => REKEY_ATTEMPT_TIME_STD,
+            Self::CorpLink => REKEY_ATTEMPT_TIME_CORPLINK,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum TimerName {
@@ -214,7 +236,7 @@ impl Tunn {
 
             if let Some(time_init_sent) = self.handshake.timer() {
                 // Handshake Initiation Retransmission
-                if now - handshake_started >= REKEY_ATTEMPT_TIME {
+                if now - handshake_started >= self.handshake.version.rekey_attempt_time() {
                     // After REKEY_ATTEMPT_TIME ms of trying to initiate a new handshake,
                     // the retries give up and cease, and clear all existing packets queued
                     // up to be sent. If a packet is explicitly queued up to be sent, then
@@ -225,7 +247,7 @@ impl Tunn {
                     return TunnResult::Err(WireGuardError::ConnectionExpired);
                 }
 
-                if time_init_sent.elapsed() >= REKEY_TIMEOUT {
+                if time_init_sent.elapsed() >= self.handshake.version.rekey_timeout() {
                     // We avoid using `time` here, because it can be earlier than `time_init_sent`.
                     // Once `checked_duration_since` is stable we can use that.
                     // A handshake initiation is retried after REKEY_TIMEOUT + jitter ms,
@@ -254,22 +276,29 @@ impl Tunn {
                     // handshake.
                     if session_established < data_packet_received
                         && now - session_established
-                            >= REJECT_AFTER_TIME - KEEPALIVE_TIMEOUT - REKEY_TIMEOUT
+                            >= REJECT_AFTER_TIME
+                                - KEEPALIVE_TIMEOUT
+                                - self.handshake.version.rekey_timeout()
                     {
-                        tracing::warn!(
-                            "HANDSHAKE(REJECT_AFTER_TIME - KEEPALIVE_TIMEOUT - \
-                        REKEY_TIMEOUT \
-                        (on receive))"
-                        );
+                        tracing::warn!("HANDSHAKE(REJECT_AFTER_TIME - KEEPALIVE_TIMEOUT - REKEY_TIMEOUT (on receive))");
                         handshake_initiation_required = true;
                     }
+                }
+
+                // CorpLink requires extra handshakes
+                if self.handshake.version == Version::CorpLink
+                    && now - session_established >= EXTRA_REKEY_AFTER_CORPLINK
+                {
+                    tracing::debug!("HANDSHAKE(EXTRA_REKEY_AFTER_CORPLINK)");
+                    handshake_initiation_required = true;
                 }
 
                 // If we have sent a packet to a given peer but have not received a
                 // packet after from that peer for (KEEPALIVE + REKEY_TIMEOUT) ms,
                 // we initiate a new handshake.
                 if data_packet_sent > aut_packet_received
-                    && now - aut_packet_received >= KEEPALIVE_TIMEOUT + REKEY_TIMEOUT
+                    && now - aut_packet_received
+                        >= KEEPALIVE_TIMEOUT + self.handshake.version.rekey_timeout()
                     && mem::replace(&mut self.timers.want_handshake, false)
                 {
                     tracing::warn!("HANDSHAKE(KEEPALIVE + REKEY_TIMEOUT)");

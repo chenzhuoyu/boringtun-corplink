@@ -3,6 +3,7 @@
 
 use boringtun::device::drop_privileges::drop_privileges;
 use boringtun::device::{DeviceConfig, DeviceHandle};
+use boringtun::noise::handshake::Version;
 use clap::{Arg, Command};
 use daemonize::Daemonize;
 use std::fs::File;
@@ -64,10 +65,10 @@ fn main() {
                 .env("WG_TUN_FD")
                 .help("File descriptor for an already-existing TUN device")
                 .default_value("-1"),
-            Arg::new("initial-chain-hash")
-                .long("initial-chain-hash")
-                .env("WG_INITIAL_CHAIN_HASH")
-                .help("Initial chain hash for CorpLink protocols")
+            Arg::new("version")
+                .long("version")
+                .env("WG_VERSION")
+                .help("Protocol version of WireGuard, used exclusively for CorpLink")
                 .default_value(""),
             Arg::new("log")
                 .takes_value(true)
@@ -100,21 +101,12 @@ fn main() {
     }
     let n_threads: usize = matches.value_of_t("threads").unwrap_or_else(|e| e.exit());
     let log_level: Level = matches.value_of_t("verbosity").unwrap_or_else(|e| e.exit());
-    let initial_chain_hash: String = matches
-        .value_of_t("initial-chain-hash")
-        .unwrap_or_else(|e| e.exit());
+    let version: String = matches.value_of_t("version").unwrap_or_else(|e| e.exit());
 
-    let initial_chain_hash: Option<[u8; 32]> = {
-        if initial_chain_hash.is_empty() {
-            None
-        } else {
-            Some(
-                base64::decode(initial_chain_hash)
-                    .unwrap_or_else(|_| panic!("Could not parse initial chain hash"))
-                    .try_into()
-                    .unwrap_or_else(|_| panic!("Could not parse initial chain hash")),
-            )
-        }
+    let version: Version = match version.as_str() {
+        "standard" => Version::Standard,
+        "corplink" => Version::CorpLink,
+        _ => Version::default(),
     };
 
     // Create a socketpair to communicate between forked processes
@@ -170,7 +162,7 @@ fn main() {
         #[cfg(target_os = "linux")]
         uapi_fd,
         use_connected_socket: !matches.is_present("disable-connected-udp"),
-        initial_chain_hash,
+        version,
         #[cfg(target_os = "linux")]
         use_multi_queue: !matches.is_present("disable-multi-queue"),
     };

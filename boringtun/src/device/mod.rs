@@ -36,7 +36,7 @@ use std::thread;
 use std::thread::JoinHandle;
 
 use crate::noise::errors::WireGuardError;
-use crate::noise::handshake::parse_handshake_anon;
+use crate::noise::handshake::{parse_handshake_anon, Version};
 use crate::noise::rate_limiter::RateLimiter;
 use crate::noise::{Packet, Tunn, TunnResult};
 use crate::x25519;
@@ -110,7 +110,7 @@ pub struct DeviceHandle {
 pub struct DeviceConfig {
     pub n_threads: usize,
     pub use_connected_socket: bool,
-    pub initial_chain_hash: Option<[u8; 32]>,
+    pub version: Version,
     #[cfg(target_os = "linux")]
     pub use_multi_queue: bool,
     #[cfg(target_os = "linux")]
@@ -122,7 +122,7 @@ impl Default for DeviceConfig {
         DeviceConfig {
             n_threads: 4,
             use_connected_socket: true,
-            initial_chain_hash: None,
+            version: Version::Standard,
             #[cfg(target_os = "linux")]
             use_multi_queue: true,
             #[cfg(target_os = "linux")]
@@ -157,7 +157,7 @@ pub struct Device {
     mtu: AtomicUsize,
 
     rate_limiter: Option<Arc<RateLimiter>>,
-    initial_chain_hash: Option<[u8; 32]>,
+    version: Version,
 
     #[cfg(target_os = "linux")]
     uapi_fd: i32,
@@ -337,7 +337,7 @@ impl Device {
             keepalive,
             next_index,
             None,
-            self.initial_chain_hash,
+            self.version,
         );
 
         let peer = Peer::new(tunn, next_index, endpoint, allowed_ips, preshared_key);
@@ -384,7 +384,7 @@ impl Device {
             cleanup_paths: Default::default(),
             mtu: AtomicUsize::new(mtu),
             rate_limiter: None,
-            initial_chain_hash: config.initial_chain_hash,
+            version: config.version,
             #[cfg(target_os = "linux")]
             uapi_fd,
         };
@@ -596,7 +596,7 @@ impl Device {
     }
 
     fn register_udp_handler(&self, udp: socket2::Socket) -> Result<(), Error> {
-        let chain_hash = self.initial_chain_hash;
+        let version = self.version;
         self.queue.new_event(
             udp.as_raw_fd(),
             Box::new(move |d, t| {
@@ -630,7 +630,7 @@ impl Device {
 
                     let peer = match &parsed_packet {
                         Packet::HandshakeInit(p) => {
-                            parse_handshake_anon(private_key, public_key, p, chain_hash)
+                            parse_handshake_anon(private_key, public_key, p, version)
                                 .ok()
                                 .and_then(|hh| {
                                     d.peers.get(&x25519::PublicKey::from(hh.peer_static_public))
